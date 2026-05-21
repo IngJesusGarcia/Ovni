@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: sicar-backend
+    env: php
+    rootDir: backend
+    buildCommand: bash render-build.sh
+    startCommand: vendor/bin/heroku-php-apache2 public/
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        generateValue: true
+      - key: APP_URL
+        sync: false # will be set to the Render app URL
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        value: boxqhdvdfkep9eisnkke-mysql.services.clever-cloud.com
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_DATABASE
+        value: boxqhdvdfkep9eisnkke
+      - key: DB_USERNAME
+        value: uyodbbhsm65bif7m
+      - key: DB_PASSWORD
+        value: 12zVW7LUMmwHNEyyzPY7
+      - key: FRONTEND_URL
+        value: http://localhost:5173
+      - key: FRONTEND_URL_PRODUCTION
+        sync: false # will be set to the Vercel frontend URL
+      - key: SESSION_DRIVER
+        value: cookie
