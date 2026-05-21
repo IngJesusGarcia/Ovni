@@ -1,10 +1,8 @@
 services:
   - type: web
     name: sicar-backend
-    env: php
+    env: docker
     rootDir: backend
-    buildCommand: bash render-build.sh
-    startCommand: vendor/bin/heroku-php-apache2 public/
     envVars:
       - key: APP_ENV
         value: production
