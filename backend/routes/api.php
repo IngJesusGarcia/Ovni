@@ -84,4 +84,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('settings', [SettingController::class, 'index']);
         Route::put('settings', [SettingController::class, 'update']);
     });
+
+    Route::get('/ping', function () {
+    return response()->json(['status' => 'alive'], 200);
+});
 });
