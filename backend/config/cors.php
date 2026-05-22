@@ -19,15 +19,9 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_filter([
-        env('FRONTEND_URL', 'http://localhost:5173'),
-        env('FRONTEND_URL_PRODUCTION'),
-    ]),
+    'allowed_origins' => ['*'],
 
-    'allowed_origins_patterns' => [
-        // Allow any Vercel preview deployment
-        '#^https://.*\.vercel\.app$#',
-    ],
+    'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
 
@@ -35,6 +29,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false,
 
 ];
