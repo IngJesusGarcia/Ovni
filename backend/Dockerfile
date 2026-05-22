@@ -27,13 +27,13 @@ ENV LOG_CHANNEL stderr
 RUN chmod -R 775 storage bootstrap/cache
 RUN chown -R www-data:www-data storage bootstrap/cache
 
-# Limpiar y cachear las configuraciones/rutas en la compilación
-RUN php artisan config:cache && php artisan route:cache
+# ❌ BORRAMOS LA LÍNEA DE "RUN php artisan config:cache" AQUÍ 
+# Para que Laravel lea las variables de entorno de Render en tiempo real.
 
 # Copiar la configuración del sitio directamente a la carpeta de Nginx
 COPY nginx.conf /etc/nginx/sites-available/default.conf
 
-# Puerto expuesto (Render lo mapeará automáticamente)
+# Puerto expuesto
 EXPOSE 80
 
 # Iniciar Nginx y PHP-FPM
