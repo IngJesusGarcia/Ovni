@@ -32,7 +32,7 @@ RUN chown -R www-data:www-data storage bootstrap/cache
 # Limpiar y optimizar la caché de rutas y configuración en la compilación
 RUN php artisan config:cache && php artisan route:cache
 # Copiar la configuración personalizada de Nginx al contenedor
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/sites-available/default.conf
 
 # Puerto expuesto
 EXPOSE 80
