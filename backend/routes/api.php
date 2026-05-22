@@ -22,6 +22,10 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
 });
 
+Route::get('v1/ping', function () {
+    return response()->json(['status' => 'alive'], 200);
+});
+
 // ── Protected routes ──
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
@@ -85,7 +89,5 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::put('settings', [SettingController::class, 'update']);
     });
 
-    Route::get('/ping', function () {
-    return response()->json(['status' => 'alive'], 200);
-});
+    
 });
