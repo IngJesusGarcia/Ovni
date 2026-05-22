@@ -6,26 +6,33 @@ COPY . .
 # Permitir que composer corra como superusuario
 ENV COMPOSER_ALLOW_SUPERUSER 1
 
-# Instalar dependencias de PHP durante la compilación de la imagen (más rápido y seguro)
+# Instalar dependencias de PHP durante la compilación
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
-# Configuración del contenedor para Laravel
+# Configuración del contenedor para Laravel (CRUCIALES PARA ENRUTAMIENTO)
 ENV SKIP_COMPOSER 1
 ENV WEBROOT /var/www/html/public
 ENV PHP_ERRORS_STDERR 1
-ENV RUN_SCRIPTS 1
 ENV REAL_IP_HEADER 1
+
+# --- LAS DOS LÍNEAS CLAVE PARA QUE ESTA IMAGEN ENRUTE LARAVEL CORRECTAMENTE ---
+ENV ENABLE_LARAVEL_KW_ROUTES true
+ENV RUN_SCRIPTS false 
+# ------------------------------------------------------------------------------
 
 # Configuración del entorno de Laravel
 ENV APP_ENV production
 ENV APP_DEBUG false
 ENV LOG_CHANNEL stderr
 
-# Otorgar permisos a las carpetas de almacenamiento y caché de Laravel
+# Asegurar permisos correctos para Laravel
 RUN chmod -R 775 storage bootstrap/cache
 RUN chown -R www-data:www-data storage bootstrap/cache
 
-# Puerto expuesto (Render mapeará este puerto automáticamente)
+# Limpiar y optimizar la caché de rutas y configuración en la compilación
+RUN php artisan config:cache && php artisan route:cache
+
+# Puerto expuesto
 EXPOSE 80
 
 # Iniciar Nginx y PHP-FPM
