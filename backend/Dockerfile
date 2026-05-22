@@ -3,15 +3,18 @@ FROM richarvey/nginx-php-fpm:3.1.6
 # Copiar el código del backend al directorio web del contenedor
 COPY . .
 
+# Permitir que composer corra como superusuario
+ENV COMPOSER_ALLOW_SUPERUSER 1
+
+# Instalar dependencias de PHP durante la compilación de la imagen (más rápido y seguro)
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
 # Configuración del contenedor para Laravel
-ENV SKIP_COMPOSER 0
+ENV SKIP_COMPOSER 1
 ENV WEBROOT /var/www/html/public
 ENV PHP_ERRORS_STDERR 1
 ENV RUN_SCRIPTS 1
 ENV REAL_IP_HEADER 1
-
-# Permitir que composer corra como superusuario
-ENV COMPOSER_ALLOW_SUPERUSER 1
 
 # Configuración del entorno de Laravel
 ENV APP_ENV production
