@@ -1,33 +1,61 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
-import { X, Camera, RefreshCw, FlipHorizontal } from 'lucide-react';
+import {
+  BrowserMultiFormatReader,
+  DecodeHintType,
+  BarcodeFormat,
+} from '@zxing/library';
+import { X, Camera, RefreshCw, FlipHorizontal, Flashlight } from 'lucide-react';
 
 /**
- * BarcodeScanner — abre la cámara y detecta códigos de barras/QR en tiempo real.
- * Usa getUserMedia() directo + ZXing decodeContinuously para máxima compatibilidad.
- *
- * Props:
- *   onDetected(code: string) — llamado al detectar un código
- *   onClose()               — llamado al cerrar
+ * BarcodeScanner — cámara con detección rápida de códigos de barras.
+ * Optimizaciones:
+ *   - Solo formatos comunes de retail (EAN-13, Code128, QR, etc.)
+ *   - TRY_HARDER habilitado
+ *   - Autofocus continuo vía camera constraints
+ *   - Torch (linterna) si el dispositivo lo soporta
  */
 export default function BarcodeScanner({ onDetected, onClose }) {
   const videoRef    = useRef(null);
   const streamRef   = useRef(null);
   const readerRef   = useRef(null);
-  const rafRef      = useRef(null);
   const mountedRef  = useRef(true);
   const cooldownRef = useRef(false);
   const lastCodeRef = useRef(null);
 
-  const [facingBack, setFacingBack]   = useState(true);
-  const [hasMultiple, setHasMultiple] = useState(false);
-  const [status, setStatus]           = useState('starting');
-  const [errorMsg, setErrorMsg]       = useState('');
-  const [lastCode, setLastCode]       = useState(null);
+  const [facingBack, setFacingBack]     = useState(true);
+  const [hasMultiple, setHasMultiple]   = useState(false);
+  const [torchOn, setTorchOn]           = useState(false);
+  const [supportsTorch, setSupportsTorch] = useState(false);
+  const [status, setStatus]             = useState('starting');
+  const [errorMsg, setErrorMsg]         = useState('');
+  const [lastCode, setLastCode]         = useState(null);
+
+  /* ── ZXing hints: solo formatos de retail para máxima velocidad ── */
+  const makeReader = () => {
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.PDF_417,
+      BarcodeFormat.ITF,       // interleaved 2 of 5
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    const reader = new BrowserMultiFormatReader(hints);
+    // Reducir el tiempo entre intentos de decodificación a 80ms (default ~500ms)
+    reader.timeBetweenScansMillis = 80;
+    reader._timeBetweenDecodingAttempts = 80;
+    return reader;
+  };
 
   /* ── Detener todo ── */
   const stopAll = useCallback(() => {
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (readerRef.current) {
       try { readerRef.current.stopContinuousDecode(); } catch (_) {}
       try { readerRef.current.reset(); } catch (_) {}
@@ -43,86 +71,108 @@ export default function BarcodeScanner({ onDetected, onClose }) {
     }
   }, []);
 
+  /* ── Activar / desactivar linterna ── */
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks?.()?.[0];
+    if (!track) return;
+    try {
+      const newVal = !torchOn;
+      await track.applyConstraints({ advanced: [{ torch: newVal }] });
+      setTorchOn(newVal);
+    } catch (_) {}
+  };
+
   /* ── Iniciar cámara ── */
   const startCamera = useCallback(async (useBack) => {
     if (!mountedRef.current) return;
     stopAll();
     setStatus('starting');
     setLastCode(null);
+    setTorchOn(false);
     lastCodeRef.current = null;
     cooldownRef.current = false;
 
-    /* 1. Pedir permiso con getUserMedia */
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: useBack ? { ideal: 'environment' } : { ideal: 'user' },
-        width:  { ideal: 1280 },
-        height: { ideal: 720 },
-      },
+    /* 1. getUserMedia con autofocus continuo */
+    const videoConstraints = {
+      facingMode: useBack ? { ideal: 'environment' } : { ideal: 'user' },
+      width:      { ideal: 1920 },   // mayor resolución = mejor detección
+      height:     { ideal: 1080 },
+      // Autofocus continuo (compatible con la mayoría de Android/iOS)
+      advanced: [
+        { focusMode: 'continuous' },
+        { exposureMode: 'continuous' },
+        { whiteBalanceMode: 'continuous' },
+      ],
     };
 
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (err1) {
-      // Reintento sin restricción de cámara
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+    } catch (_) {
+      // Reintento sin restricciones avanzadas
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: useBack ? { ideal: 'environment' } : { ideal: 'user' } },
+          audio: false,
+        });
       } catch (err2) {
-        if (!mountedRef.current) return;
-        const msg = err2.name === 'NotAllowedError'
-          ? 'Permiso de cámara denegado.\nHabilítalo en la configuración del navegador.'
-          : `No se pudo acceder a la cámara.\n(${err2.name || err2.message})`;
-        setErrorMsg(msg);
-        setStatus('error');
-        return;
+        // Último intento sin ninguna restricción
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (err3) {
+          if (!mountedRef.current) return;
+          const msg = err3.name === 'NotAllowedError'
+            ? 'Permiso de cámara denegado.\nHabilítalo en la configuración del navegador.'
+            : `No se pudo acceder a la cámara.\n(${err3.name || err3.message})`;
+          setErrorMsg(msg);
+          setStatus('error');
+          return;
+        }
       }
     }
 
     if (!mountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
     streamRef.current = stream;
 
-    /* 2. Detectar si hay múltiples cámaras */
+    /* 2. Detectar cámaras múltiples y soporte de linterna */
     try {
       const devs = await navigator.mediaDevices.enumerateDevices();
       if (mountedRef.current) setHasMultiple(devs.filter(d => d.kind === 'videoinput').length > 1);
     } catch (_) {}
 
-    /* 3. Conectar stream al <video> */
+    const track = stream.getVideoTracks()[0];
+    if (track) {
+      try {
+        const caps = track.getCapabilities?.() || {};
+        if (mountedRef.current) setSupportsTorch(!!caps.torch);
+      } catch (_) {}
+    }
+
+    /* 3. Conectar al <video> y esperar metadata */
     const video = videoRef.current;
     if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
 
     video.srcObject = stream;
-    video.setAttribute('playsinline', 'true'); // extra para iOS
+    video.setAttribute('playsinline', 'true');
     video.muted = true;
 
-    /* 4. Esperar a que los metadatos del video estén listos */
     await new Promise(resolve => {
       if (video.readyState >= 2) { resolve(); return; }
-      const onReady = () => { video.removeEventListener('loadedmetadata', onReady); resolve(); };
-      video.addEventListener('loadedmetadata', onReady);
-      setTimeout(resolve, 4000); // timeout de seguridad
+      const fn = () => { video.removeEventListener('loadedmetadata', fn); resolve(); };
+      video.addEventListener('loadedmetadata', fn);
+      setTimeout(resolve, 4000);
     });
 
     if (!mountedRef.current) return;
 
-    /* 5. Reproducir el video */
     try { await video.play(); }
     catch (_) { try { await video.play(); } catch (__) {} }
 
     if (!mountedRef.current) return;
-
-    /* Confirmar que realmente muestra imagen */
-    if (video.videoWidth === 0) {
-      // Esperar un poco más en caso de que iOS tarde
-      await new Promise(r => setTimeout(r, 800));
-    }
-
     setStatus('active');
 
-    /* 6. Iniciar ZXing decodeContinuously sobre el <video> */
-    const reader = new BrowserMultiFormatReader();
+    /* 4. Iniciar ZXing sobre el elemento de video */
+    const reader = makeReader();
     readerRef.current = reader;
 
     try {
@@ -134,13 +184,12 @@ export default function BarcodeScanner({ onDetected, onClose }) {
           lastCodeRef.current = code;
           cooldownRef.current = true;
           setLastCode(code);
-          try { navigator.vibrate?.(120); } catch (_) {}
+          try { navigator.vibrate?.(100); } catch (_) {}
           setTimeout(() => {
             cooldownRef.current = false;
             if (mountedRef.current) onDetected(code);
           }, 350);
         }
-        // NotFoundException es normal en frames sin código — ignorar
       });
     } catch (decErr) {
       if (!mountedRef.current) return;
@@ -152,8 +201,7 @@ export default function BarcodeScanner({ onDetected, onClose }) {
   /* ── Montar / desmontar ── */
   useEffect(() => {
     mountedRef.current = true;
-    // Pequeño delay para que el DOM esté listo antes de pedir la cámara
-    const t = setTimeout(() => startCamera(true), 100);
+    const t = setTimeout(() => startCamera(true), 80);
     return () => {
       clearTimeout(t);
       mountedRef.current = false;
@@ -161,7 +209,6 @@ export default function BarcodeScanner({ onDetected, onClose }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Cambiar cámara ── */
   const flipCamera = () => {
     const newFacing = !facingBack;
     setFacingBack(newFacing);
@@ -183,6 +230,19 @@ export default function BarcodeScanner({ onDetected, onClose }) {
             <span style={{ fontWeight: 700, fontSize: 15 }}>Escanear Código</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* Linterna */}
+            {supportsTorch && status === 'active' && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={toggleTorch}
+                title="Linterna"
+                style={torchOn ? { background: 'var(--warning-soft)', borderColor: 'var(--warning)', color: 'var(--warning)' } : {}}
+              >
+                {/* Ícono de linterna con emoji por compatibilidad */}
+                <span style={{ fontSize: 15 }}>🔦</span>
+              </button>
+            )}
+            {/* Cambiar cámara */}
             {hasMultiple && (
               <button
                 className="btn btn-secondary btn-sm"
@@ -200,7 +260,6 @@ export default function BarcodeScanner({ onDetected, onClose }) {
 
         {/* Visor */}
         <div className="barcode-viewfinder">
-          {/* Video SIEMPRE en el DOM para que el ref funcione */}
           <video
             ref={videoRef}
             className="barcode-video"
@@ -210,7 +269,6 @@ export default function BarcodeScanner({ onDetected, onClose }) {
             style={{ display: status === 'error' ? 'none' : 'block' }}
           />
 
-          {/* Iniciando */}
           {status === 'starting' && (
             <div className="barcode-loading">
               <span className="spinner" style={{ width: 36, height: 36, borderWidth: 3 }} />
@@ -220,7 +278,6 @@ export default function BarcodeScanner({ onDetected, onClose }) {
             </div>
           )}
 
-          {/* Marco de escaneo animado */}
           {status === 'active' && (
             <div className="scan-frame">
               <span className="scan-corner tl" />
@@ -231,7 +288,6 @@ export default function BarcodeScanner({ onDetected, onClose }) {
             </div>
           )}
 
-          {/* Error */}
           {status === 'error' && (
             <div className="barcode-error">
               <Camera size={36} opacity={0.45} />
@@ -262,7 +318,7 @@ export default function BarcodeScanner({ onDetected, onClose }) {
                 background: 'var(--success)',
                 animation: 'pulse 1.5s ease-in-out infinite',
               }} />
-              Apunta la cámara al código de barras
+              Apunta el código dentro del marco
             </div>
           ) : status === 'starting' ? (
             <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
