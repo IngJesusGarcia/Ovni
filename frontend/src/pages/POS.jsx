@@ -3,8 +3,9 @@ import api from '../api/axios';
 import usePosStore from '../stores/posStore';
 import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/common/Modal';
+import BarcodeScanner from '../components/common/BarcodeScanner';
 import toast, { Toaster } from 'react-hot-toast';
-import { Search, Trash2, ShoppingCart, Pause, Play, X, Zap, UserCircle, CreditCard, ChevronDown, AlertCircle } from 'lucide-react';
+import { Search, Trash2, ShoppingCart, Pause, Play, X, Zap, UserCircle, CreditCard, ChevronDown, AlertCircle, Camera } from 'lucide-react';
 
 export default function POS() {
   const [mobileTab, setMobileTab] = useState('search'); // 'search' | 'cart'
@@ -23,6 +24,9 @@ export default function POS() {
   const [weightQty, setWeightQty] = useState('');
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [pendingProduct, setPendingProduct] = useState(null);
+
+  // Barcode camera scanner state
+  const [showScanner, setShowScanner] = useState(false);
 
   // Fast product state
   const [showFastProduct, setShowFastProduct] = useState(false);
@@ -101,6 +105,30 @@ export default function POS() {
     toast.success(`${product.name} agregado`, { duration: 1500 });
     searchRef.current?.focus();
   }, [store]);
+
+  // Handle barcode detected from camera
+  const handleScan = useCallback((code) => {
+    setShowScanner(false);
+    setSearchTerm(code);
+    // Buscar por código de barras directamente
+    api.get(`/products/barcode/${encodeURIComponent(code)}`)
+      .then(res => addProduct(res.data))
+      .catch(() => {
+        // Si no encuentra por barcode exacto, poner en el buscador
+        toast('Código escaneado, refinando búsqueda...', { icon: '🔍', duration: 2000 });
+        api.get(`/products/search?q=${encodeURIComponent(code)}`)
+          .then(res => {
+            if (res.data.length === 1) {
+              addProduct(res.data[0]);
+            } else if (res.data.length > 1) {
+              setSearchResults(res.data);
+              setFocusedResult(0);
+            } else {
+              toast.error('Producto no encontrado');
+            }
+          });
+      });
+  }, [addProduct]);
 
   const addWeightProduct = () => {
     const qty = parseFloat(weightQty);
@@ -372,6 +400,10 @@ export default function POS() {
 
         {/* Action bar */}
         <div style={{ padding: '8px 16px', display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          {/* Botón escanear con cámara — visible siempre pero destacado en móvil */}
+          <button className="pos-scan-btn" onClick={() => setShowScanner(true)}>
+            <Camera size={16} /> Escanear
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowFastProduct(true)}>
             <Zap size={14} /> Prod. Rápido
           </button>
@@ -585,6 +617,14 @@ export default function POS() {
           </button>
         </div>
       </div>
+
+      {/* ── Barcode Camera Scanner ── */}
+      {showScanner && (
+        <BarcodeScanner
+          onDetected={handleScan}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
 
       {/* ── Payment Modal ── */}
       <Modal isOpen={showPayment} onClose={() => { setShowPayment(false); setPaymentType('efectivo'); }} title="Cobrar Venta">

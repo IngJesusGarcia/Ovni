@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, ShoppingCart, Package, Layers,
-  DollarSign, Users, BarChart3, LogOut, AlertTriangle, Tag
+  DollarSign, Users, BarChart3, LogOut, AlertTriangle, Tag,
+  Menu, X
 } from 'lucide-react';
 
 const navItems = [
@@ -20,6 +22,7 @@ const navItems = [
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -28,8 +31,8 @@ export default function Sidebar() {
 
   const filtered = navItems.filter(item => !item.roles || item.roles.includes(user?.role));
 
-  // En móvil mostramos máximo 5 items para que quepan bien
-  const mobileItems = filtered.slice(0, 5);
+  // En móvil: primeros 4 items en bottom bar + botón menú
+  const mobileBarItems = filtered.slice(0, 4);
 
   return (
     <>
@@ -62,7 +65,7 @@ export default function Sidebar() {
 
       {/* ── Mobile Bottom Navigation Bar ── */}
       <nav className="bottom-nav">
-        {mobileItems.map(item => (
+        {mobileBarItems.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -73,15 +76,61 @@ export default function Sidebar() {
             <span>{item.short}</span>
           </NavLink>
         ))}
+        {/* Botón "Más" para abrir el drawer */}
         <button
-          className="bottom-nav-item"
-          onClick={handleLogout}
+          className={`bottom-nav-item${drawerOpen ? ' active' : ''}`}
+          onClick={() => setDrawerOpen(true)}
           style={{ background: 'none', border: 'none' }}
         >
-          <LogOut size={20} />
-          <span>Salir</span>
+          <Menu size={20} />
+          <span>Más</span>
         </button>
       </nav>
+
+      {/* ── Mobile Full Menu Drawer ── */}
+      {drawerOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setDrawerOpen(false)}>
+          <div className="mobile-drawer" onClick={e => e.stopPropagation()}>
+            {/* Drawer header */}
+            <div className="mobile-drawer-header">
+              <div className="sidebar-logo" style={{ fontSize: 16, padding: 0 }}>SICAR POS</div>
+              <button className="btn btn-icon btn-secondary" onClick={() => setDrawerOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* User info */}
+            <div className="mobile-drawer-user">
+              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>{user?.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{user?.role}</div>
+            </div>
+
+            {/* All nav items */}
+            <nav className="mobile-drawer-nav">
+              {filtered.map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  className={({ isActive }) => `mobile-drawer-link${isActive ? ' active' : ''}`}
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  <item.icon size={20} />
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+
+            {/* Logout */}
+            <div className="mobile-drawer-footer">
+              <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }} onClick={handleLogout}>
+                <LogOut size={16} />
+                Cerrar Sesión
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
