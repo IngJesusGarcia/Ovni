@@ -21,6 +21,7 @@ export default function BarcodeScanner({ onDetected, onClose }) {
   const mountedRef  = useRef(true);
   const cooldownRef = useRef(false);
   const lastCodeRef = useRef(null);
+  const nativeLoopRef = useRef(null);
 
   const [facingBack, setFacingBack]     = useState(true);
   const [hasMultiple, setHasMultiple]   = useState(false);
@@ -56,6 +57,10 @@ export default function BarcodeScanner({ onDetected, onClose }) {
 
   /* ── Detener todo ── */
   const stopAll = useCallback(() => {
+    if (nativeLoopRef.current) {
+      clearTimeout(nativeLoopRef.current);
+      nativeLoopRef.current = null;
+    }
     if (readerRef.current) {
       try { readerRef.current.stopContinuousDecode(); } catch (_) {}
       try { readerRef.current.reset(); } catch (_) {}
@@ -95,8 +100,8 @@ export default function BarcodeScanner({ onDetected, onClose }) {
     /* 1. getUserMedia con autofocus continuo */
     const videoConstraints = {
       facingMode: useBack ? { ideal: 'environment' } : { ideal: 'user' },
-      width:      { ideal: 1920 },   // mayor resolución = mejor detección
-      height:     { ideal: 1080 },
+      width:      { ideal: 1280 },   // 720p es el balance perfecto entre nitidez y velocidad de procesamiento en JS
+      height:     { ideal: 720 },
       // Autofocus continuo (compatible con la mayoría de Android/iOS)
       advanced: [
         { focusMode: 'continuous' },
@@ -171,30 +176,77 @@ export default function BarcodeScanner({ onDetected, onClose }) {
     if (!mountedRef.current) return;
     setStatus('active');
 
-    /* 4. Iniciar ZXing sobre el elemento de video */
-    const reader = makeReader();
-    readerRef.current = reader;
+    /* 4. Iniciar Escaneo (BarcodeDetector nativo con aceleración por hardware o fallback con ZXing) */
+    let detector = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'code_93', 'upc_a', 'upc_e', 'qr_code', 'itf', 'pdf417']
+        });
+      } catch (e) {
+        console.warn('Native BarcodeDetector not supported/initialized:', e);
+      }
+    }
 
-    try {
-      reader.decodeFromVideoElementContinuously(video, (result, err) => {
-        if (!mountedRef.current) return;
-        if (result) {
-          const code = result.getText();
-          if (cooldownRef.current || lastCodeRef.current === code) return;
-          lastCodeRef.current = code;
-          cooldownRef.current = true;
-          setLastCode(code);
-          try { navigator.vibrate?.(100); } catch (_) {}
-          setTimeout(() => {
-            cooldownRef.current = false;
-            if (mountedRef.current) onDetected(code);
-          }, 350);
+    if (detector) {
+      console.log('Using native BarcodeDetector for ultra-fast scanning.');
+      const scanFrame = async () => {
+        if (!mountedRef.current || !streamRef.current) return;
+        const vid = videoRef.current;
+        if (!vid) return;
+
+        if (vid.readyState >= 2) {
+          try {
+            const barcodes = await detector.detect(vid);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (!cooldownRef.current && lastCodeRef.current !== code) {
+                lastCodeRef.current = code;
+                cooldownRef.current = true;
+                setLastCode(code);
+                try { navigator.vibrate?.(100); } catch (_) {}
+                setTimeout(() => {
+                  cooldownRef.current = false;
+                  if (mountedRef.current) onDetected(code);
+                }, 350);
+              }
+            }
+          } catch (_) {
+            // Ignorar errores temporales de renderizado de frame
+          }
         }
-      });
-    } catch (decErr) {
-      if (!mountedRef.current) return;
-      setErrorMsg(`El escáner no pudo iniciarse.\n(${decErr?.message || ''})`);
-      setStatus('error');
+        
+        if (mountedRef.current && streamRef.current) {
+          nativeLoopRef.current = setTimeout(scanFrame, 60); // Escaneo ultrarrápido cada 60ms
+        }
+      };
+      scanFrame();
+    } else {
+      console.log('Falling back to ZXing library scanner.');
+      const reader = makeReader();
+      readerRef.current = reader;
+
+      try {
+        reader.decodeFromVideoElementContinuously(video, (result, err) => {
+          if (!mountedRef.current) return;
+          if (result) {
+            const code = result.getText();
+            if (cooldownRef.current || lastCodeRef.current === code) return;
+            lastCodeRef.current = code;
+            cooldownRef.current = true;
+            setLastCode(code);
+            try { navigator.vibrate?.(100); } catch (_) {}
+            setTimeout(() => {
+              cooldownRef.current = false;
+              if (mountedRef.current) onDetected(code);
+            }, 350);
+          }
+        });
+      } catch (decErr) {
+        if (!mountedRef.current) return;
+        setErrorMsg(`El escáner no pudo iniciarse.\n(${decErr?.message || ''})`);
+        setStatus('error');
+      }
     }
   }, [stopAll, onDetected]);
 
