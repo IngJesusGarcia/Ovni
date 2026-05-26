@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import api from '../api/axios';
 import Modal from '../components/common/Modal';
 import toast, { Toaster } from 'react-hot-toast';
-import { Plus, Pencil, Trash2, Search, Upload, Download, FileDown, X, CheckCircle, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight, ArrowRight, Percent } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Upload, Download, FileDown, X, CheckCircle, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight, ArrowRight, Percent, Camera } from 'lucide-react';
+import BarcodeScanner from '../components/common/BarcodeScanner';
 
 const emptyProduct = { code:'', name:'', price:'', cost:'', stock:'', min_stock:'0', unit:'pieza', has_expiration:false, category_id:'', description:'', use_inventory: true };
 
@@ -36,6 +37,7 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({});
+  const [showScanner, setShowScanner] = useState(false);
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -236,7 +238,27 @@ export default function Products() {
       <Modal isOpen={showForm} onClose={()=>setShowForm(false)} title={editing?'Editar Producto':'Nuevo Producto'} width="500px">
         <form onSubmit={handleSubmit}>
           <div className="grid-2">
-            <div className="form-group"><label className="form-label">Código</label><input className="form-input" value={form.code} onChange={e=>setForm({...form,code:e.target.value})} required/></div>
+            <div className="form-group">
+              <label className="form-label">Código</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input 
+                  className="form-input" 
+                  value={form.code} 
+                  onChange={e => setForm({ ...form, code: e.target.value })} 
+                  required 
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowScanner(true)}
+                  title="Escanear con cámara"
+                  style={{ padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Camera size={16} />
+                </button>
+              </div>
+            </div>
             <div className="form-group"><label className="form-label">Nombre</label><input className="form-input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/></div>
           </div>
           <div className="grid-2">
@@ -480,6 +502,18 @@ export default function Products() {
           </div>
         )}
       </Modal>
+
+      {/* ── Barcode Camera Scanner ── */}
+      {showScanner && (
+        <BarcodeScanner
+          onDetected={(code) => {
+            setForm(prev => ({ ...prev, code }));
+            setShowScanner(false);
+            toast.success(`Código escaneado: ${code}`);
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </>
   );
 }
