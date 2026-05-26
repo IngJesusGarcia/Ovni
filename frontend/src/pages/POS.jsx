@@ -109,12 +109,16 @@ export default function POS() {
   // Handle barcode detected from camera
   const handleScan = useCallback((code) => {
     setShowScanner(false);
-    setSearchTerm(code);
-    // Buscar por código de barras directamente
+    
+    // Buscar por código de barras directamente sin rellenar la barra de búsqueda todavía para evitar búsquedas automáticas duplicadas
     api.get(`/products/barcode/${encodeURIComponent(code)}`)
-      .then(res => addProduct(res.data))
+      .then(res => {
+        // Encontrado con éxito: agregar al carrito (limpia barra y resultados en addProduct)
+        addProduct(res.data);
+      })
       .catch(() => {
-        // Si no encuentra por barcode exacto, poner en el buscador
+        // Si no encuentra por barcode exacto, recién ahí lo ponemos en el buscador para buscar coincidencias parciales
+        setSearchTerm(code);
         toast('Código escaneado, refinando búsqueda...', { icon: '🔍', duration: 2000 });
         api.get(`/products/search?q=${encodeURIComponent(code)}`)
           .then(res => {
@@ -125,6 +129,9 @@ export default function POS() {
               setFocusedResult(0);
             } else {
               toast.error('Producto no encontrado');
+              // Limpiar barra y dejar listo para el siguiente
+              setSearchTerm('');
+              setSearchResults([]);
             }
           });
       });
