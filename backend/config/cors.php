@@ -1,20 +1,14 @@
 <?php
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Cross-Origin Resource Sharing (CORS) Configuration
-    |--------------------------------------------------------------------------
-    */
-
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    // Cambiado: Especificamos tu URL real de Vercel en lugar de '*'
+    // Aquí debes incluir explícitamente el origen de tu frontend en Vercel
     'allowed_origins' => [
-        'https://ovni-xi.vercel.app'
+        'https://ovni-xi.vercel.app',
+        'http://localhost:3000', // Por si pruebas en local con React/Next.js
     ],
 
     'allowed_origins_patterns' => [],
@@ -25,7 +19,5 @@ return [
 
     'max_age' => 0,
 
-    // Cambiado: Lo pasamos a true por si React envía cookies/tokens (ej. con Axios withCredentials)
-    'supports_credentials' => true,
-
+    'supports_credentials' => true, // Crucial si manejas cookies/sesiones con Sanctum
 ];
