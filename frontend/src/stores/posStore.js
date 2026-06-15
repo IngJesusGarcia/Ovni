@@ -1,18 +1,16 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-const usePosStore = create((set, get) => ({
-  // Cart items: [{ product_id, code, name, price, cost, quantity, unit, discount, subtotal }]
-  items: [],
-  client: null,
-  discount: 0,
-  selectedIndex: 0,
+const usePosStore = create(
+  persist(
+    (set, get) => ({
+      // Cart items: [{ product_id, code, name, price, cost, quantity, unit, discount, subtotal }]
+      items: [],
+      client: null,
+      discount: 0,
+      selectedIndex: 0,
 
-  // Computed
-  get subtotal() {
-    return get().items.reduce((sum, item) => sum + item.subtotal, 0);
-  },
-
-  getSubtotal: () => get().items.reduce((sum, item) => sum + item.subtotal, 0),
+      getSubtotal: () => get().items.reduce((sum, item) => sum + item.subtotal, 0),
   getTotal: () => {
     const subtotal = get().items.reduce((sum, item) => sum + item.subtotal, 0);
     return subtotal - get().discount;
@@ -114,6 +112,14 @@ const usePosStore = create((set, get) => ({
     client: data.client_id ? { id: data.client_id } : null,
     discount: data.discount || 0,
     selectedIndex: 0,
+  }),
+}), {
+  name: 'pos-cart-storage',
+  partialize: (state) => ({
+    items: state.items,
+    client: state.client,
+    discount: state.discount,
+    selectedIndex: state.selectedIndex,
   }),
 }));
 
