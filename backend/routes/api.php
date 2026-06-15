@@ -74,14 +74,18 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('cash-registers/{cashRegister}/income', [CashRegisterController::class, 'income']);
     Route::post('cash-registers/{cashRegister}/withdrawal', [CashRegisterController::class, 'withdrawal']);
     Route::get('cash-registers/{cashRegister}/report', [CashRegisterController::class, 'report']);
+    Route::get('cash-registers/{cashRegister}/export', [CashRegisterController::class, 'export']);
 
     // Reports (admin only)
     Route::middleware('role:admin')->prefix('reports')->group(function () {
         Route::get('dashboard', [ReportController::class, 'dashboard']);
         Route::get('sales', [ReportController::class, 'sales']);
+        Route::get('sales/export', [ReportController::class, 'exportSales']);
         Route::get('sales-by-user', [ReportController::class, 'salesByUser']);
         Route::get('top-products', [ReportController::class, 'topProducts']);
+        Route::get('top-products/export', [ReportController::class, 'exportTopProducts']);
         Route::get('profits', [ReportController::class, 'profits']);
+        Route::get('profits/export', [ReportController::class, 'exportProfits']);
     });
 
     // Settings (admin only)

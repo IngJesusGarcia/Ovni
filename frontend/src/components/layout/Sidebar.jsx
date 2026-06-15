@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useStockAlertStore } from '../../stores/stockAlertStore';
 import {
   LayoutDashboard, ShoppingCart, Package, Layers,
   DollarSign, Users, BarChart3, LogOut, AlertTriangle, Tag,
@@ -13,7 +14,7 @@ const navItems = [
   { to: '/products', icon: Package, label: 'Productos', short: 'Productos' },
   { to: '/inventory', icon: Layers, label: 'Inventario', short: 'Inventario' },
   { to: '/pricing', icon: Tag, label: 'Etiquetado Inteligente', short: 'Precios' },
-  { to: '/low-stock', icon: AlertTriangle, label: 'Bajo Stock', short: 'Stock' },
+  { to: '/low-stock', icon: AlertTriangle, label: 'Bajo Stock', short: 'Stock', badgeKey: 'lowStock' },
   { to: '/cash-register', icon: DollarSign, label: 'Caja', short: 'Caja' },
   { to: '/clients', icon: Users, label: 'Clientes', short: 'Clientes' },
   { to: '/reports', icon: BarChart3, label: 'Reportes', short: 'Reportes', roles: ['admin'] },
@@ -23,6 +24,12 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const lowStockCount = useStockAlertStore(s => s.count);
+
+  const getBadge = (item) => {
+    if (item.badgeKey === 'lowStock' && lowStockCount > 0) return lowStockCount;
+    return null;
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -40,17 +47,23 @@ export default function Sidebar() {
       <aside className="sidebar">
         <div className="sidebar-logo">SICAR POS</div>
         <nav className="sidebar-nav">
-          {filtered.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </NavLink>
-          ))}
+          {filtered.map(item => {
+            const badge = getBadge(item);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+              >
+                <item.icon size={18} />
+                {item.label}
+                {badge && (
+                  <span className="sidebar-badge">{badge > 99 ? '99+' : badge}</span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
         <div className="sidebar-user">
           <div>

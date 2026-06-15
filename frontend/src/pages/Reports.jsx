@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import api from '../api/axios';
 import Modal from '../components/common/Modal';
-import { BarChart3, ShoppingCart, X, Receipt } from 'lucide-react';
+import { BarChart3, ShoppingCart, X, Receipt, FileSpreadsheet, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function Reports() {
   const [tab, setTab] = useState('sales');
@@ -23,6 +25,7 @@ export default function Reports() {
   const [isCancelConfirm, setIsCancelConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [submittingCancel, setSubmittingCancel] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -40,6 +43,110 @@ export default function Reports() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Exportar Excel (backend) ──
+  const exportExcel = async () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const exportEndpoints = {
+        sales:    `/reports/sales/export?from=${from}&to=${to}`,
+        products: `/reports/top-products/export?from=${from}&to=${to}`,
+        profits:  `/reports/profits/export?from=${from}&to=${to}`,
+        users:    null,
+      };
+      const url = exportEndpoints[tab];
+      if (!url) { alert('Exportación no disponible para esta vista'); return; }
+      const res = await api.get(url, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `reporte_${tab}_${from}_${to}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch { alert('Error al exportar Excel'); }
+    finally { setExporting(false); }
+  };
+
+  // ── Exportar PDF (jsPDF frontend) ──
+  const exportPDF = () => {
+    if (!data) return;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const tabNames = { sales: 'Ventas', users: 'Ventas por Usuario', products: 'Top Productos', profits: 'Ganancias' };
+    const title = `Reporte: ${tabNames[tab] || tab}`;
+    const subtitle = `Período: ${from} al ${to}`;
+    const generated = `Generado: ${new Date().toLocaleString('es-MX')}`;
+
+    // Header
+    doc.setFillColor(30, 30, 46);
+    doc.rect(0, 0, 297, 22, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+    doc.text('SICAR POS — ' + title, 14, 10);
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+    doc.text(subtitle + '   |   ' + generated, 14, 17);
+    doc.setTextColor(0, 0, 0);
+
+    let tableColumns = [];
+    let tableRows = [];
+
+    if (tab === 'sales') {
+      tableColumns = ['Folio', 'Fecha', 'Cajero', 'Cliente', 'Total', 'Pago', 'Estado'];
+      tableRows = (data.sales || []).map(s => [
+        s.ticket_number || s.id,
+        new Date(s.created_at).toLocaleString('es-MX'),
+        s.user?.name || '—',
+        s.client?.name || 'Público General',
+        `$${Number(s.total).toFixed(2)}`,
+        s.payment_type || '—',
+        s.status,
+      ]);
+      // Summary row
+      if (data.summary) {
+        tableRows.push(['', '', '', 'TOTAL', `$${Number(data.summary.total).toFixed(2)}`, `${data.summary.count} transac.`, '']);
+      }
+    } else if (tab === 'users') {
+      tableColumns = ['Usuario', '# Ventas', 'Total Vendido'];
+      tableRows = (Array.isArray(data) ? data : []).map(u => [
+        u.user?.name || '—', u.sales_count, `$${Number(u.total).toFixed(2)}`
+      ]);
+    } else if (tab === 'products') {
+      tableColumns = ['Código', 'Producto', 'Cantidad', 'Ingresos', 'Ganancia'];
+      tableRows = (Array.isArray(data) ? data : []).map(p => [
+        p.code || '—', p.product_name,
+        Number(p.total_quantity).toFixed(2),
+        `$${Number(p.total_revenue).toFixed(2)}`,
+        `$${Number(p.total_profit).toFixed(2)}`,
+      ]);
+    } else if (tab === 'profits') {
+      tableColumns = ['Fecha', '# Ventas', 'Ingresos', 'Costo', 'Ganancia'];
+      tableRows = (data.daily || []).map(d => [
+        d.date, d.sales_count,
+        `$${Number(d.revenue).toFixed(2)}`,
+        `$${Number(d.cost).toFixed(2)}`,
+        `$${Number(d.profit).toFixed(2)}`,
+      ]);
+      if (data.totals) {
+        tableRows.push(['TOTAL', data.totals.sales_count,
+          `$${Number(data.totals.revenue).toFixed(2)}`,
+          `$${Number(data.totals.cost).toFixed(2)}`,
+          `$${Number(data.totals.profit).toFixed(2)}`,
+        ]);
+      }
+    }
+
+    autoTable(doc, {
+      head: [tableColumns],
+      body: tableRows,
+      startY: 26,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [245, 245, 250] },
+      foot: [],
+    });
+
+    doc.save(`reporte_${tab}_${from}_${to}.pdf`);
   };
 
   const openSaleDetail = async (sale) => {
@@ -148,11 +255,25 @@ export default function Reports() {
     <>
       <div className="page-header">
         <h1 className="page-title">Reportes</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
           <span style={{ color: 'var(--text-muted)' }}>a</span>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} />
-          <button className="btn btn-primary" onClick={load}><BarChart3 size={14} /> Generar</button>
+          <button className="btn btn-primary" id="btn-generar-reporte" onClick={load}><BarChart3 size={14} /> Generar</button>
+          {data && (
+            <>
+              <button className="btn btn-sm" id="btn-export-excel"
+                style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}
+                onClick={exportExcel} disabled={exporting || tab === 'users'}>
+                <FileSpreadsheet size={13} /> {exporting ? 'Exportando…' : 'Excel'}
+              </button>
+              <button className="btn btn-sm" id="btn-export-pdf"
+                style={{ background: 'rgba(239,68,68,0.10)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.25)' }}
+                onClick={exportPDF}>
+                <FileText size={13} /> PDF
+              </button>
+            </>
+          )}
         </div>
       </div>
       <div className="page-body">
