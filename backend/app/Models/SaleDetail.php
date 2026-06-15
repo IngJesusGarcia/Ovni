@@ -14,6 +14,7 @@ class SaleDetail extends Model
         'product_id',
         'product_name',
         'quantity',
+        'refunded_quantity',
         'price',
         'cost',
         'discount',
@@ -22,11 +23,19 @@ class SaleDetail extends Model
 
     protected $casts = [
         'quantity' => 'decimal:3',
+        'refunded_quantity' => 'decimal:3',
         'price' => 'decimal:2',
         'cost' => 'decimal:2',
         'discount' => 'decimal:2',
         'subtotal' => 'decimal:2',
     ];
+
+    protected $appends = ['remaining_quantity'];
+
+    public function getRemainingQuantityAttribute(): float
+    {
+        return (float) max(0, $this->quantity - ($this->refunded_quantity ?? 0));
+    }
 
     public function sale()
     {

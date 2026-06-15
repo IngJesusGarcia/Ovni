@@ -83,6 +83,35 @@ class SaleController extends Controller
     }
 
     /**
+     * Refund specific quantities of items from a sale
+     */
+    public function refund(Request $request, Sale $sale)
+    {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+            'items' => 'required|array|min:1',
+            'items.*.sale_detail_id' => 'required|integer|exists:sale_details,id',
+            'items.*.quantity' => 'required|numeric|min:0.001',
+        ]);
+
+        try {
+            $refunded = $this->saleService->refundSaleItems(
+                $sale,
+                $validated['items'],
+                $validated['reason'],
+                auth()->id()
+            );
+
+            return response()->json([
+                'message' => 'Reembolso procesado correctamente.',
+                'sale' => $refunded,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
      * Hold a sale
      */
     public function hold(Request $request)

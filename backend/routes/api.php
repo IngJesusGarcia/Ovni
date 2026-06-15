@@ -62,6 +62,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('sales/hold', [SaleController::class, 'hold']);
     Route::post('sales/{heldSale}/resume', [SaleController::class, 'resume']);
     Route::post('sales/{sale}/cancel', [SaleController::class, 'cancel']);
+    Route::post('sales/{sale}/refund', [SaleController::class, 'refund']);
     Route::get('sales/{sale}/ticket', [SaleController::class, 'ticket']);
     Route::apiResource('sales', SaleController::class)->only(['index', 'store', 'show']);
 

@@ -134,11 +134,26 @@ class InventoryService
     }
 
     /**
-     * Reverse a sale movement (cancelación)
+     * Reverse a sale movement (cancelación / devolución)
      */
-    public function reverseSaleMovement(Product $product, float $quantity, int $saleId, int $userId): Movement
+    public function reverseSaleMovement(Product $product, float $quantity, int $saleId, int $userId, ?string $notes = null): Movement
     {
         $stockBefore = $product->stock;
+
+        // Skip stock increment for generic fast product OR products that don't use inventory
+        if ($product->code === 'RAPIDO' || !$product->use_inventory) {
+            return Movement::create([
+                'product_id' => $product->id,
+                'type' => 'cancelacion',
+                'quantity' => $quantity,
+                'stock_before' => $stockBefore,
+                'stock_after' => $stockBefore,
+                'reference_type' => 'sale',
+                'reference_id' => $saleId,
+                'notes' => $notes ?? 'Cancelación de venta',
+                'user_id' => $userId,
+            ]);
+        }
 
         Product::where('id', $product->id)->increment('stock', $quantity);
         $product->refresh();
@@ -151,7 +166,7 @@ class InventoryService
             'stock_after' => $product->stock,
             'reference_type' => 'sale',
             'reference_id' => $saleId,
-            'notes' => 'Cancelación de venta',
+            'notes' => $notes ?? 'Cancelación de venta',
             'user_id' => $userId,
         ]);
     }

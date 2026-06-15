@@ -192,6 +192,114 @@ class SaleService
     }
 
     /**
+     * Refund specific quantities of items from a sale
+     */
+    public function refundSaleItems(Sale $sale, array $refundItems, string $reason, int $userId): Sale
+    {
+        if ($sale->isCancelled()) {
+            throw new \Exception('No se pueden reembolsar artículos de una venta cancelada.');
+        }
+
+        return DB::transaction(function () use ($sale, $refundItems, $reason, $userId) {
+            $totalRefundAmount = 0;
+            $itemsRefundedCount = 0;
+
+            foreach ($refundItems as $refund) {
+                $detailId = $refund['sale_detail_id'];
+                $refundQty = (float) $refund['quantity'];
+
+                if ($refundQty <= 0) {
+                    continue;
+                }
+
+                $detail = SaleDetail::where('sale_id', $sale->id)->where('id', $detailId)->first();
+                if (!$detail) {
+                    throw new \Exception("Detalle de venta con ID {$detailId} no pertenece a esta venta.");
+                }
+
+                $remainingQty = (float) ($detail->quantity - $detail->refunded_quantity);
+                if ($refundQty > $remainingQty) {
+                    throw new \Exception("La cantidad a reembolsar ({$refundQty}) para el producto '{$detail->product_name}' excede el remanente disponible ({$remainingQty}).");
+                }
+
+                // Incrementar cantidad reembolsada
+                $detail->increment('refunded_quantity', $refundQty);
+
+                // Revertir inventario
+                $product = Product::find($detail->product_id);
+                if ($product) {
+                    $this->inventoryService->reverseSaleMovement(
+                        $product,
+                        $refundQty,
+                        $sale->id,
+                        $userId,
+                        "Devolución parcial: {$reason}"
+                    );
+                }
+
+                // Calcular monto devuelto (precio menos descuento proporcional)
+                $discountPerUnit = $detail->quantity > 0 ? ($detail->discount / $detail->quantity) : 0;
+                $itemRefundTotal = ($detail->price * $refundQty) - ($discountPerUnit * $refundQty);
+
+                $totalRefundAmount += $itemRefundTotal;
+                $itemsRefundedCount++;
+            }
+
+            if ($totalRefundAmount <= 0) {
+                throw new \Exception('No se especificaron cantidades válidas para reembolsar.');
+            }
+
+            // Registrar movimiento de retiro de caja si aplica
+            if ($sale->cash_register_id) {
+                CashMovement::create([
+                    'cash_register_id' => $sale->cash_register_id,
+                    'type'             => 'retiro',
+                    'amount'           => $totalRefundAmount,
+                    'description'      => "Reembolso parcial venta #{$sale->ticket_number}: {$reason}",
+                    'user_id'          => $userId,
+                    'reference_id'     => $sale->id,
+                    'reference_type'   => 'sale',
+                ]);
+            }
+
+            // Descontar saldo del cliente si fue venta a crédito
+            if ($sale->payment_type === 'credito' && $sale->client_id) {
+                Client::where('id', $sale->client_id)
+                    ->where('balance', '>=', $totalRefundAmount)
+                    ->decrement('balance', $totalRefundAmount);
+            }
+
+            // Recargar detalles y comprobar si todo está completamente devuelto
+            $sale->load('details');
+            $allRefunded = true;
+            foreach ($sale->details as $d) {
+                if ($d->quantity > $d->refunded_quantity) {
+                    $allRefunded = false;
+                    break;
+                }
+            }
+
+            // Si todos los artículos de la venta fueron devueltos, marcar la venta como cancelada
+            if ($allRefunded) {
+                $sale->update([
+                    'status'        => 'cancelada',
+                    'cancel_reason' => "Reembolso total de artículos: {$reason}",
+                    'cancelled_by'  => $userId,
+                    'cancelled_at'  => now(),
+                ]);
+            }
+
+            ActivityLog::log('reembolso', 'ventas', "Reembolso parcial venta {$sale->ticket_number} por \${$totalRefundAmount}: {$reason}", [
+                'sale_id'       => $sale->id,
+                'refund_amount' => $totalRefundAmount,
+                'reason'        => $reason,
+            ]);
+
+            return $sale->fresh(['details.product', 'user', 'client']);
+        });
+    }
+
+    /**
      * Hold a sale for later
      */
     public function holdSale(array $data): HeldSale
